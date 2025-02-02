@@ -3,18 +3,17 @@
 ############################
 
 Keywords = [
-    "if",
-    "else",
-    "while",
-    "for",
-    "break",
-    "continue",
-    "return",
-    "function",
-    "var",
-    "const",
-    "true",
-    "false",
+    "IF",
+    "ELSE",
+    "WHILE",
+    "FOR",
+    "BREAK",
+    "RETURN",
+    "FUNCTION",
+    "VAR",
+    "CONST",
+    "TRUE",
+    "FALSE",
 ]
 
 Operators = {
@@ -78,34 +77,29 @@ class Lexer:
         self.current_char = None
         self.tokens = []
 
-    def next_token(self):
-
-
-        # Skip current character
+    def next_token(self, skip_whitespace=True):
+        print(f"start {self.current_char = }, {self.pos = }, {self.line = }, {self.column = }")
         self.pos += 1
-        if self.pos < len(self.input):
-            if self.input[self.pos] == "\n":
-                self.line += 1
-                self.column = 1
-            else:
-                self.column += 1
 
-        # Skip whitespace
-        while self.pos < len(self.input) and self.input[self.pos] in " \t\n":
-            if self.input[self.pos] == "\n":
-                self.line += 1
-                self.column = 1
-            else:
-                self.column += 1
-            self.pos += 1
+        # Handle any leading whitespace and newlines
+        if skip_whitespace:
+            while self.pos < len(self.input) and self.input[self.pos] in " \t\n":
+                if self.input[self.pos] == "\n":
+                    self.line += 1
+                    self.column = 1
+                else:
+                    self.column += 1
+                self.pos += 1
 
-        # Check for end of input
         if self.pos >= len(self.input):
             self.current_char = None
             return
-        print(f"{self.current_char = }, {self.pos = }, {self.line = }, {self.column = }")
-        # Update current character
+
         self.current_char = self.input[self.pos]
+
+        self.column += 1
+
+        print(f"end   {self.current_char = }, {self.pos = }, {self.line = }, {self.column = }")
 
     def error(self, message):
         raise Exception(f"Lexer error: {message} at line {self.line}, column {self.column}")
@@ -139,9 +133,8 @@ class Lexer:
                     self.next_token()
                 self.add_token(Operators[operator], None)
             elif self.current_char in Symbols:
-                symbol = self.current_char
+                self.add_token(Symbols[self.current_char], None)
                 self.next_token()
-                self.add_token(Symbols[symbol], None)
             elif self.current_char in " \t\n":
                 self.next_token()
             else:
@@ -159,12 +152,10 @@ class Lexer:
         last_line: int = self.line
         last_column: int = self.column
 
-        while self.current_char.isalnum() or self.current_char == "_":
-            last_line = self.line
-            last_column = self.column
+        while self.current_char.isalpha() or self.current_char == "_":
             identifier += self.current_char
-            self.next_token()
-        if identifier.lower() in Keywords:
+            self.next_token(False)
+        if identifier.upper() in Keywords:
             self.add_token("KEYWORD", identifier.upper(), last_line, last_column)
         else:
             self.add_token("IDENTIFIER", identifier, last_line, last_column)
@@ -191,12 +182,12 @@ class Lexer:
         while self.current_char in "0123456789._":
             if self.current_char == ".":
                 is_float = True
-                self.next_token()
+                self.next_token(False)
             elif self.current_char == "_":
-                self.next_token()
+                self.next_token(False)
             else:
                 number += self.current_char
-                self.next_token()
+                self.next_token(False)
         if is_float:
             self.add_token("FLOAT", float(number))
         else:

@@ -1,6 +1,5 @@
 from antlr4 import *
 
-from ASTBuilder import ASTBuilder
 from Parser.pymLexer import pymLexer
 from Parser.pymParser import pymParser
 from SemanticAnalyzer import *
