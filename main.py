@@ -1,7 +1,7 @@
 from antlr4 import *
 
-from Parser.pymLexer import pymLexer
-from Parser.pymParser import pymParser
+from Lexer import Lexer
+from Parser import Parser
 from SemanticAnalyzer import *
 from CodeGenerator import CodeGenerator
 from Lexer import Lexer
@@ -15,28 +15,19 @@ def parse():
 
     lexer = Lexer(input_str)
     tokens = lexer.build()
-    print(tokens)
-    # print("Lexer durch")
-    #
-    # parser = pymParser(stream)
-    # tree = parser.program()
-    # print("Tree wurde erstellt")
-    # print(tree.toStringTree(recog=parser))
+    print("Lexer:", tokens)
 
-    # # print("fertig wirklich")
-    # ast = Program([
-    #     VarDeclaration("x", NumberLiteral(10)),
-    #     Assignment("x", BinaryOperation(Variable("x"), '+', NumberLiteral(5)))
-    # ])
-    #
-    # # 1. Semantische Analyse
-    # analyzer = SemanticAnalyzer()
-    # analyzer.analyze(ast)
-    #
-    # # 2. LLVM IR Code generieren
-    # generator = CodeGenerator()
-    # generator.generate(ast)
-    # generator.dump()
+    parser = Parser(tokens)
+    ast = parser.parse()
+    print("Parser:", ast)
+
+    analyzer = SemanticAnalyzer()
+    analyzer.analyze(ast)
+    print("Semantic Analyzer")
+
+    generator = CodeGenerator()
+    generator.generate(ast)
+    generator.dump()
 
 if __name__ == '__main__':
     parse()

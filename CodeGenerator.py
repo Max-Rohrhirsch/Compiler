@@ -1,3 +1,5 @@
+from logging.config import IDENTIFIER
+
 from llvmlite import ir, binding
 
 from SemanticAnalyzer import *
@@ -11,10 +13,7 @@ class CodeGenerator:
         self.symbol_table = {}
 
     def generate(self, node):
-        if isinstance(node, Program):
-            self.generate_main_function(node)
-        else:
-            raise Exception("Unsupported AST node")
+        self.generate_main_function(node)
 
     def generate_main_function(self, node):
         func_type = ir.FunctionType(ir.VoidType(), [])
@@ -42,12 +41,12 @@ class CodeGenerator:
             raise Exception(f"Unknown statement type: {type(node)}")
 
     def generate_expression(self, node):
-        if isinstance(node, NumberLiteral):
+        if isinstance(node, Token):
             return ir.Constant(ir.IntType(32), node.value)
-        elif isinstance(node, Variable):
-            if node.name not in self.symbol_table:
-                raise Exception(f"Variable '{node.name}' not declared.")
-            return self.symbol_table[node.name]
+        # elif isinstance(node, Identifier):
+        #     if node.name not in self.symbol_table:
+        #         raise Exception(f"Variable '{node.name}' not declared.")
+        #     return self.symbol_table[node.name]
         elif isinstance(node, BinaryOperation):
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)
