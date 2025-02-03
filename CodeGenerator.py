@@ -21,7 +21,7 @@ class CodeGenerator:
         block = self.function.append_basic_block(name="entry")
         self.builder = ir.IRBuilder(block)
 
-        for stmt in node.statements:
+        for stmt in node:
             self.generate_statement(stmt)
 
         self.builder.ret_void()
@@ -35,18 +35,40 @@ class CodeGenerator:
                 raise Exception(f"Variable '{node.name}' not declared.")
             value = self.generate_expression(node.value)
             self.symbol_table[node.name] = value
+        elif isinstance(node, VarDeclaration):
+            if node.name not in self.symbol_table:
+                raise Exception(f"Variable '{node.name}' not declared.")
+            value = self.generate_expression(node.value)
+            self.symbol_table[node.name] = value
         elif isinstance(node, BinaryOperation):
             return self.generate_expression(node)
+        elif isinstance(node, IfStatement):
+            return self.generate_if_statement(node)
         else:
             raise Exception(f"Unknown statement type: {type(node)}")
 
-    def generate_expression(self, node):
+    def generate_if_statement(self, node: IfStatement) -> None:
+        condition = self.generate_expression(node.condition)
+
+        then_block = self.builder.append_basic_block("then")
+        end_block = self.builder.append_basic_block("end")
+
+        self.builder.cbranch(condition, then_block, end_block)
+
+        self.builder.position_at_start(then_block)
+        for stmt in node.then_body:
+            self.generate_expression(stmt)
+        self.builder.branch(end_block)
+
+        self.builder.position_at_start(end_block)
+        return None
+
+
+
+    def generate_expression(self, node) -> ir.Value:
+        print(node)
         if isinstance(node, Token):
             return ir.Constant(ir.IntType(32), node.value)
-        # elif isinstance(node, Identifier):
-        #     if node.name not in self.symbol_table:
-        #         raise Exception(f"Variable '{node.name}' not declared.")
-        #     return self.symbol_table[node.name]
         elif isinstance(node, BinaryOperation):
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)

@@ -18,6 +18,7 @@ class VarDeclaration(Node):
     def __init__(self, name, value):
         super().__init__("VarDeclaration")
         self.name = name
+        self.data_type = None
         self.value = value
 
     def __repr__(self):
