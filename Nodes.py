@@ -22,7 +22,7 @@ class VarDeclaration(Node):
         self.value = value
 
     def __repr__(self):
-        return f"VarDeclaration(name = {self.name}, value = {self.value})"
+        return f"VarDeclaration({self.data_type} {self.name} = {self.value})"
 
 class Assignment(Node):
     def __init__(self, name, value):

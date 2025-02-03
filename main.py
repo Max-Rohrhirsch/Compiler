@@ -22,11 +22,11 @@ def parse():
     print("Parser:", ast)
 
     analyzer = SemanticAnalyzer()
-    analyzer.analyze(ast)
-    print("Semantic Analyzer")
+    o_ast = analyzer.analyze(ast)
+    print("Semantic Analyzer:", o_ast)
 
     generator = CodeGenerator()
-    generator.generate(ast)
+    generator.generate(o_ast)
     generator.dump()
 
 if __name__ == '__main__':
