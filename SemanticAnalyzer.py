@@ -31,7 +31,7 @@ class SemanticAnalyzer:
         elif isinstance(node, Token) and node.type == "IDENTIFIER":
             if node.value not in self.symbol_table:
                 raise Exception(f"Variable '{node.value}' is not declared.")
-        elif isinstance(node, Token):
+        elif isinstance(node, Token) or isinstance(node, Comment):
             pass
         elif isinstance(node, IfStatement):
             self.analyze(node.condition)

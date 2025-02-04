@@ -1,4 +1,7 @@
 var x = 40;
+# For dem IF-Statement
 if (x > 30) {
+# im if statement
  var a = 3 + 5;
 }
+# Nach dem If statement

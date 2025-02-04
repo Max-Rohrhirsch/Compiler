@@ -107,20 +107,21 @@ class Lexer:
             column = self.column
         self.tokens.append(Token(token, value, line, column))
 
-
     ############################
     ## MAIN FUNCTION
     ############################
 
     def build(self) -> list[Token]:
         self._next_token()
-        while self.current_char is not None :
+        while self.current_char is not None:
             if self.current_char.isalpha() or self.current_char == "_":
                 self._make_identifier()
             elif self.current_char.isdigit():
                 self._make_number()
             elif self.current_char in "\"'":
                 self._make_string()
+            elif self.current_char == "#":
+                self._make_comment()
             elif self.current_char in Operators:
                 operator = self.current_char
                 self._next_token()
@@ -138,10 +139,15 @@ class Lexer:
         self._add_token("EOF", None)
         return self.tokens
 
-
     ############################
     ## MAKE FUNCTIONS
     ############################
+    def _make_comment(self) -> None:
+        comment = ""
+        while self.current_char != "\n":
+            comment += self.current_char
+            self._next_token(False)
+        self._add_token("COMMENT", comment)
 
     def _make_identifier(self) -> None:
         identifier = ""

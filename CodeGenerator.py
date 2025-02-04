@@ -34,7 +34,6 @@ class CodeGenerator:
         return self.llvm_ir
 
     def generate_main_function(self, node: list[Node,]) -> None:
-        # Create the main function signature: void main()
         func_type = ir.FunctionType(ir.IntType(32), [ir.IntType(32)])
         function = ir.Function(self.module, func_type, name="main")
         block = function.append_basic_block(name="entry")
@@ -46,15 +45,20 @@ class CodeGenerator:
         self.builder.ret(ir.Constant(ir.IntType(32), 0))
 
     def generate_statement(self, stmt: Node) -> None:
-        # Dispatch based on the type of the statement.
         if isinstance(stmt, VarDeclaration):
             self.generate_var_declaration(stmt)
         elif isinstance(stmt, IfStatement):
             self.generate_if_statement(stmt)
         elif isinstance(stmt, Assignment):
             self.generate_assignment(stmt)
+        elif isinstance(stmt, Comment):
+            self.generate_comment(stmt.value)
         else:
             raise Exception(f"Unsupported statement type: {stmt}")
+
+    def generate_comment(self, stmt: str) -> None:
+        """ Fügt einen Kommentar hinzu """
+        self.builder.comment(stmt)
 
     def generate_var_declaration(self, stmt: VarDeclaration) -> None:
         """ Erstellt eine Variable und speichert sie in der 'variables'-Map """
@@ -123,10 +127,11 @@ class CodeGenerator:
                 raise Exception(f"Unsupported operator {expr.operator}")
 
         elif isinstance(expr, Token):
-            if expr.type in {"INT", "FLOAT"}:
-                return ir.Constant(ir.IntType(32), int(expr.value))  # Float müsste `ir.FloatType()` sein
-
-            elif expr.type == "IDENTIFIER":  # FIX: Identifiers (Variablen) behandeln
+            if expr.type == "INT":
+                return ir.Constant(ir.IntType(32), int(expr.value))
+            elif expr.type == "FLOAT":
+                return ir.Constant(ir.FloatType(), float(expr.value))
+            elif expr.type == "IDENTIFIER":
                 if expr.value in self.variables:
                     return self.builder.load(self.variables[expr.value])
                 else:

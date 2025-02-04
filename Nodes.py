@@ -5,6 +5,15 @@ class Node:
         self.end_pos: int
 
 
+class Comment(Node):
+    def __init__(self, value):
+        super().__init__("Comment")
+        self.value = value
+
+    def __repr__(self):
+        return f"Comment('{self.value}')"
+
+
 class IfStatement(Node):
     def __init__(self, condition, then_body, else_body=None):
         super().__init__("IfStatement")

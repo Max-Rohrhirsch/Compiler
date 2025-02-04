@@ -115,6 +115,10 @@ class Parser:
             return self.assignment()
         if self.match("KEYWORD", "IF"):
             return self.if_statement()
+        if self.match("COMMENT"):
+            token = self.consume("COMMENT")
+            print("TOKEN DEBUG", token)
+            return Comment(token.value)
         raise SyntaxError("Invalid statement" + str(self.peek()))
 
     def var_declaration(self) -> VarDeclaration:
