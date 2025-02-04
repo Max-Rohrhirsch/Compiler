@@ -1,6 +1,6 @@
 from SemanticAnalyzer import *
-from Lexer import Token
 from llvmlite import ir, binding
+from Lexer import Operators
 
 
 class CodeGenerator:
@@ -9,7 +9,7 @@ class CodeGenerator:
         self.module = ir.Module(name="pym_module")
         self.builder = None
         self.function = None
-        self.symbol_table = {}
+        self.variables = {}
 
         # RESULTS
         self.llvm_ir = ""
@@ -25,6 +25,7 @@ class CodeGenerator:
         self.generate_main_function(node)
 
         self.llvm_ir = str(self.module)
+        # print(self.llvm_ir)
         llvm_mod = binding.parse_assembly(self.llvm_ir)
         llvm_mod.verify()
         target = binding.Target.from_default_triple()
@@ -42,34 +43,109 @@ class CodeGenerator:
         for stmt in node:
             self.generate_statement(stmt)
 
-        self.builder.ret_void()
+        self.builder.ret(ir.Constant(ir.IntType(32), 0))
 
     def generate_statement(self, stmt: Node) -> None:
         # Dispatch based on the type of the statement.
         if isinstance(stmt, VarDeclaration):
             self.generate_var_declaration(stmt)
-        elif stmt.__class__.__name__ == "IfStatement":
+        elif isinstance(stmt, IfStatement):
             self.generate_if_statement(stmt)
+        elif isinstance(stmt, Assignment):
+            self.generate_assignment(stmt)
         else:
             raise Exception(f"Unsupported statement type: {stmt}")
 
     def generate_var_declaration(self, stmt: VarDeclaration) -> None:
-        ...
+        """ Erstellt eine Variable und speichert sie in der 'variables'-Map """
+        ptr = self.builder.alloca(ir.IntType(32), name=stmt.name)
+        if stmt.value:
+            value = self.generate_expression(stmt.value)
+            self.builder.store(value, ptr)
+        self.variables[stmt.name] = ptr
+
+    def generate_assignment(self, stmt: Assignment) -> None:
+        """ Setzt eine bestehende Variable auf einen neuen Wert """
+        if stmt.name not in self.variables:
+            raise Exception(f"Variable {stmt.name} not declared!")
+        value = self.generate_expression(stmt.value)
+        self.builder.store(value, self.variables[stmt.name])
 
     def generate_if_statement(self, stmt: IfStatement) -> None:
-        ...
+        """ Erstellt eine If-Else-Struktur """
+        cond_val = self.generate_expression(stmt.condition)
+        cond_bool = self.builder.icmp_signed('!=', cond_val, ir.Constant(ir.IntType(32), 0))
 
-    def generate_expression(self, expr: BinaryOperation) -> None:
-        ...
+        if_then = self.builder.append_basic_block("if_then")
+        if_else = self.builder.append_basic_block("if_else") if stmt.else_body else None
+        merge_block = self.builder.append_basic_block("merge")
 
-    def generate_binary_operation(self, expr: BinaryOperation) -> None:
-        left = self.generate_expression(expr.left)
-        right = self.generate_expression(expr.right)
+        self.builder.cbranch(cond_bool, if_then, if_else if if_else else merge_block)
 
-        if expr.operator == "PLUS":
-            return self.builder.add(left, right, name="addtmp")
-        elif expr.operator == "GREATER_THAN":
-            cmp = self.builder.icmp_signed(">", left, right, name="cmptmp")
-            return self.builder.zext(cmp, ir.IntType(32), name="booltmp")
+        # If-Block generieren
+        self.builder.position_at_end(if_then)
+        for sub_stmt in stmt.then_body:
+            self.generate_statement(sub_stmt)
+        self.builder.branch(merge_block)
+
+        # Else-Block (falls vorhanden)
+        if if_else:
+            self.builder.position_at_end(if_else)
+            for sub_stmt in stmt.else_body:
+                self.generate_statement(sub_stmt)
+            self.builder.branch(merge_block)
+
+        self.builder.position_at_end(merge_block)
+
+    def generate_expression(self, expr) -> ir.Value:
+        """Generiert einen Wert oder eine binäre Operation."""
+        if isinstance(expr, BinaryOperation):
+            left = self.generate_expression(expr.left)
+            right = self.generate_expression(expr.right)
+
+            if expr.operator == Operators["+"]:
+                return self.builder.add(left, right)
+            elif expr.operator == Operators["-"]:
+                return self.builder.sub(left, right)
+            elif expr.operator == Operators["*"]:
+                return self.builder.mul(left, right)
+            elif expr.operator == Operators["/"]:
+                return self.builder.sdiv(left, right)
+            elif expr.operator == Operators["<"]:
+                return self.builder.icmp_signed('<', left, right)
+            elif expr.operator == Operators[">"]:
+                return self.builder.icmp_signed('>', left, right)
+            elif expr.operator == Operators["=="]:
+                return self.builder.icmp_signed('==', left, right)
+            elif expr.operator == Operators["!="]:
+                return self.builder.icmp_signed('!=', left, right)
+            else:
+                raise Exception(f"Unsupported operator {expr.operator}")
+
+        elif isinstance(expr, Token):
+            if expr.type in {"INT", "FLOAT"}:
+                return ir.Constant(ir.IntType(32), int(expr.value))  # Float müsste `ir.FloatType()` sein
+
+            elif expr.type == "IDENTIFIER":  # FIX: Identifiers (Variablen) behandeln
+                if expr.value in self.variables:
+                    return self.builder.load(self.variables[expr.value])
+                else:
+                    raise Exception(f"Undefined variable: {expr.value}")
+
+            else:
+                raise Exception(f"Unsupported token type {expr.type}")
+
+        elif isinstance(expr, str) and expr in self.variables:
+            return self.builder.load(self.variables[expr])
+
         else:
-            raise Exception(f"Unsupported binary operator: {expr.operator}")
+            raise Exception(f"Unknown expression type: {expr}")
+
+    def get_value(self, val):
+        """ Wandelt einen Wert um (Konstante oder Variable) """
+        if isinstance(val, int):
+            return ir.Constant(ir.IntType(32), val)
+        elif isinstance(val, str) and val in self.variables:
+            return self.builder.load(self.variables[val])
+        else:
+            raise Exception(f"Unknown value: {val}")

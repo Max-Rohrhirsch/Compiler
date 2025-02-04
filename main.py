@@ -2,7 +2,6 @@ from Lexer import Lexer
 from Parser import Parser
 from SemanticAnalyzer import SemanticAnalyzer
 from CodeGenerator import CodeGenerator
-from Z_Test import llvm_ir
 
 
 def parse():

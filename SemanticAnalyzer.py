@@ -2,11 +2,15 @@ from Nodes import *
 from Lexer import Token
 
 
+############################
+## SEMANTIC ANALYZER
+############################
+
 class SemanticAnalyzer:
     def __init__(self) -> None:
         self.symbol_table = {}
 
-    def analyze(self, node: Node or list[Node, ...]) -> Node:
+    def analyze(self, node: Node or list[Node, ...]) -> Node or list[Node, ...]:
         if isinstance(node, list):
             for n in node:
                 self.analyze(n)
@@ -38,6 +42,10 @@ class SemanticAnalyzer:
             raise Exception(f"Unknown node type: {type(node)}, {node}")
         return node
 
+    ############################
+    ## HELPER FUNCTIONS
+    ############################
+
     def get_data_type(self, node: Node or Token) -> str:
         if isinstance(node, Token):
             if node.type == "IDENTIFIER":
@@ -48,6 +56,8 @@ class SemanticAnalyzer:
                 return "FLOAT"
 
         elif isinstance(node, BinaryOperation):
+            if node.operator in ("GREATER_THAN", "LESS_THAN", "GREATER_EQUAL", "LESS_EQUAL", "EQUAL", "NOT_EQUAL"):
+                return "BOOL"
             if self.get_data_type(node.left) == "INT" and self.get_data_type(node.right) == "INT":
                 return "INT"
             return "FLOAT"

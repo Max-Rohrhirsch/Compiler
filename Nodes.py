@@ -4,6 +4,7 @@ class Node:
         self.start_pos: int
         self.end_pos: int
 
+
 class IfStatement(Node):
     def __init__(self, condition, then_body, else_body=None):
         super().__init__("IfStatement")
@@ -13,6 +14,7 @@ class IfStatement(Node):
 
     def __repr__(self):
         return f"IfStatement(condition = {self.condition}, then_body = {self.then_body}, else_body = {self.else_body})"
+
 
 class VarDeclaration(Node):
     def __init__(self, name, value):
@@ -24,6 +26,7 @@ class VarDeclaration(Node):
     def __repr__(self):
         return f"VarDeclaration({self.data_type} {self.name} = {self.value})"
 
+
 class Assignment(Node):
     def __init__(self, name, value):
         super().__init__("Assignment")
@@ -32,6 +35,7 @@ class Assignment(Node):
 
     def __repr__(self):
         return f"Assignment(name = {self.name}, value = {self.value})"
+
 
 class BinaryOperation(Node):
     def __init__(self, left, operator, right):
