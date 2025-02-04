@@ -1,11 +1,12 @@
 from Nodes import *
 from Lexer import Token
 
+
 class SemanticAnalyzer:
     def __init__(self) -> None:
         self.symbol_table = {}
 
-    def analyze(self, node: Node) -> Node:
+    def analyze(self, node: Node or list[Node, ...]) -> Node:
         if isinstance(node, list):
             for n in node:
                 self.analyze(n)

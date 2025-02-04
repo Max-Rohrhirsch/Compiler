@@ -1,14 +1,9 @@
-from antlr4 import *
-
 from Lexer import Lexer
 from Parser import Parser
-from SemanticAnalyzer import *
+from SemanticAnalyzer import SemanticAnalyzer
 from CodeGenerator import CodeGenerator
-from Lexer import Lexer
+from Z_Test import llvm_ir
 
-
-
-# java -jar Parser/antlr.jar -Dlanguage=Python3 -o Parser -visitor pym.g4
 
 def parse():
     input_str = open("input.txt", "r").read()
@@ -26,8 +21,10 @@ def parse():
     print("Semantic Analyzer:", o_ast)
 
     generator = CodeGenerator()
-    generator.generate(o_ast)
-    generator.dump()
+    _llvm_ir = generator.generate(o_ast)
+    assembly = generator.assembly
+    print("CodeGenerator:", _llvm_ir)
+
 
 if __name__ == '__main__':
     parse()

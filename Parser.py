@@ -54,6 +54,7 @@ Symbols = {
 from Nodes import *
 from Lexer import Token
 
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -76,19 +77,19 @@ class Parser:
 
     def match(self, expected_type: str, expected_value=None) -> bool:
         """Consumes the token if it matches the expected type."""
-        if self.peek() and self.peek().type == expected_type and (expected_value is None or self.peek().value == expected_value):
+        if self.peek() and self.peek().type == expected_type and (
+                expected_value is None or self.peek().value == expected_value):
             self.advance()
             return True
         return False
 
-    def consume(self, expected_type) -> Token:
+    def consume(self, expected_type: str) -> Token:
         """Consume a token and move to the next."""
         token = self.peek()
         if token is None or token.type != expected_type:
             raise SyntaxError(f"Expected {expected_type}, but got {token.type if token else 'EOF'}")
         self.current += 1
         return token
-
 
     ############################
     ## MAIN FUNCTION
@@ -100,7 +101,6 @@ class Parser:
         while self.peek().type != "EOF":
             statements.append(self.statement())
         return statements
-
 
     ############################
     ## MAKER FUNCTIONS
@@ -157,7 +157,6 @@ class Parser:
             self.consume("RBRACE")
 
         return IfStatement(condition, then_body, else_body)
-
 
     ############################
     ## EXPRESSION PARSING
