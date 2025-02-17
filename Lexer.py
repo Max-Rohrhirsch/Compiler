@@ -1,3 +1,5 @@
+from Nodes import Token
+
 ############################
 ## CONSTANTS
 ############################
@@ -8,12 +10,28 @@ Keywords = [
     "WHILE",
     "FOR",
     "BREAK",
+    "CONTINUE",
     "RETURN",
     "FUNCTION",
+    "MATCH",
+
     "VAR",
     "CONST",
+    "TEMP",
+    "POINTER",
+
     "TRUE",
     "FALSE",
+
+    "CLASS",
+    "DATACLASS",
+    "ENUM",
+    "CONSTRUCTOR",
+    "DESTRUCTOR",
+
+    "IMPORT",
+    "INCLUDE",
+    "FROM"
 ]
 
 Operators = {
@@ -22,7 +40,14 @@ Operators = {
     "*": "MUL",
     "/": "DIV",
     "%": "MOD",
+
     "=": "ASSIGN",
+    "+=": "PLUS_ASSIGN",
+    "-=": "MINUS_ASSIGN",
+    "*=": "MUL_ASSIGN",
+    "/=": "DIV_ASSIGN",
+    "%=": "MOD_ASSIGN",
+
     "==": "EQUAL",
     "!=": "NOT_EQUAL",
     "<": "LESS_THAN",
@@ -32,6 +57,23 @@ Operators = {
     "&&": "AND",
     "||": "OR",
     "!": "NOT",
+
+    "..": "RANGE",
+    "->": "ARROW",
+    "=>": "FAT_ARROW",
+
+    "++": "INCREMENT",
+    "--": "DECREMENT",
+    "!!": "NEGATE",
+
+    ">>": "RIGHT_SHIFT",
+    "<<": "LEFT_SHIFT",
+    "&": "BITWISE_AND",
+    "|": "BITWISE_OR",
+    "^": "BITWISE_XOR",
+    "~": "BITWISE_NOT",
+    "??": "NULL_COALESCING",
+    "??=": "NULL_COALESCING_ASSIGN",
 }
 
 Symbols = {
@@ -46,22 +88,6 @@ Symbols = {
     ":": "COLON",
     ".": "DOT",
 }
-
-
-############################
-## Token Class
-############################
-
-class Token:
-    def __init__(self, _type, value, line, column) -> None:
-        self.type = _type
-        self.value = value
-        self.line = line
-        self.column = column
-        self.current_token = None
-
-    def __repr__(self) -> str:
-        return f"Token({self.type}, {self.value}, {self.line}, {self.column})"
 
 
 ############################
@@ -144,6 +170,7 @@ class Lexer:
     ############################
     def _make_comment(self) -> None:
         comment = ""
+        self._next_token(False)
         while self.current_char != "\n":
             comment += self.current_char
             self._next_token(False)

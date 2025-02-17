@@ -1,7 +1,11 @@
-var x = 40;
-# For dem IF-Statement
-if (x > 30) {
-# im if statement
- var a = 3 + 5;
+while 3 < 5 +6 {
+    var a = 5
 }
-# Nach dem If statement
+for i in 1..5 {
+    print(i)
+}
+var x = 4
+for i in x {
+    print(i)
+}
+x++

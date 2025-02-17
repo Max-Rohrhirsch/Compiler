@@ -112,13 +112,17 @@ class Parser:
         if self.match("KEYWORD", "VAR"):
             return self.var_declaration()
         if self.match("IDENTIFIER"):
-            return self.assignment()
+            return self.assignment()  # OR function call
         if self.match("KEYWORD", "IF"):
             return self.if_statement()
-        if self.match("COMMENT"):
-            token = self.consume("COMMENT")
-            print("TOKEN DEBUG", token)
-            return Comment(token.value)
+        if self.peek().type == "COMMENT":
+            return Comment(self.consume("COMMENT").value)
+        if self.match("KEYWORD", "WHILE"):
+            return self.while_statement()
+        if self.match("KEYWORD", "FOR"):
+            return self.for_statement()
+        if self.match("KEYWORD", "FUNCTION"):
+            return self.function_declaration()
         raise SyntaxError("Invalid statement" + str(self.peek()))
 
     def var_declaration(self) -> VarDeclaration:
@@ -126,7 +130,6 @@ class Parser:
         name = self.consume("IDENTIFIER").value
         self.consume("ASSIGN")
         value = self.expression()
-        self.consume("SEMICOLON")
         return VarDeclaration(name, value)
 
     def assignment(self) -> Assignment:
@@ -134,7 +137,6 @@ class Parser:
         name = self.tokens[self.current - 1].value
         self.consume("ASSIGN")
         value = self.expression()
-        self.consume("SEMICOLON")
         return Assignment(name, value)
 
     def if_statement(self) -> IfStatement:
@@ -161,6 +163,106 @@ class Parser:
             self.consume("RBRACE")
 
         return IfStatement(condition, then_body, else_body)
+
+    def while_statement(self) -> WhileStatement:
+        """Parses a while-statement into an AST node."""
+        self.consume("LPAREN")
+        condition = self.expression()
+        self.consume("RPAREN")
+
+        self.consume("LBRACE")
+        body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            body.append(self.statement())
+        self.consume("RBRACE")
+        return WhileStatement(condition, body)
+
+    def for_statement(self) -> ForStatement:
+        """Parses a for-statement into an AST node."""
+        attributes = [self.consume("IDENTIFIER")]
+
+        while self.match("COMMA"):
+            attributes.append(self.consume("IDENTIFIER"))
+
+        if not self.match("KEYWORD", "IN"):
+            raise SyntaxError("Expected 'in' keyword in for loop")
+
+        if self.peek().type == "INT":
+            value = self.consume("INT")
+        elif self.peek().type == "IDENTIFIER":
+            value = self.consume("IDENTIFIER")
+        elif self.peek().type == "RANGE":
+            value = self.consume("RANGE")
+        else:
+            raise SyntaxError("Expected a number or variable")
+
+        self.consume("LBRACE")
+        body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            body.append(self.statement())
+        self.consume("RBRACE")
+        return ForStatement(attributes, value, body)
+
+    def function_declaration(self) -> FunctionDeclaration:
+        """Parses a function declaration."""
+        name = self.consume("IDENTIFIER").value
+
+        self.consume("LPAREN")
+        parameters = []
+        while self.peek().type != "RPAREN":
+            parameters.append(self.consume("IDENTIFIER"))
+            self.match("COMMA")
+        self.consume("RPAREN")
+
+        self.consume("LBRACE")
+        body = []
+        while self.peek().type != "RBRACE":
+            body.append(self.statement())
+        self.consume("RBRACE")
+        return FunctionDeclaration(name, "VOID", parameters, body)
+
+    def return_statement(self) -> ReturnStatement:
+        """Parses a return statement."""
+        self.consume("RETURN")
+        value = self.expression()
+        return ReturnStatement(value)
+
+    def break_statement(self) -> BreakStatement:
+        return BreakStatement()
+
+    def function_call(self) -> FunctionCall:
+        """Parses a function call."""
+        name = self.consume("IDENTIFIER").value
+
+        self.consume("LPAREN")
+        arguments = []
+        while self.peek().type != "RPAREN":
+            arguments.append(self.expression())
+            self.match("COMMA")
+        self.consume("RPAREN")
+        return FunctionCall(name, arguments)
+
+    def match_statement(self) -> MatchStatement:
+        """Parses a match case."""
+        self.consume("Match")
+        value = self.consume("IDENTIFIER")
+
+        self.consume("LBRACE")
+        match_statements = []
+        while self.peek().type != "ELSE" and self.peek().type != "RBRACE":
+            value = self.expression()
+            self.consume("ARROW")
+            return_value = self.expression()
+            match_statements.append(MatchCase(value, return_value))
+
+        if self.match("ELSE"):
+            self.consume("ARROW")
+            match_statements.append(self.expression())
+
+        self.consume("RBRACE")
+        return MatchStatement(value, match_statements)
+
+
 
     ############################
     ## EXPRESSION PARSING
