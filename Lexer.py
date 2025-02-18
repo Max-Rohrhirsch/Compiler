@@ -9,6 +9,7 @@ Keywords = [
     "ELSE",
     "WHILE",
     "FOR",
+    "IN",
     "BREAK",
     "CONTINUE",
     "RETURN",
@@ -192,10 +193,10 @@ class Lexer:
     def _make_string(self) -> None:
         string = ""
         string_char = self.current_char
-
+        self._next_token(False)
         while self.current_char != string_char:
             if self.current_char == "\\":
-                self._next_token()
+                self._next_token(False)
                 if self.current_char == "n":
                     string += "\n"
                 elif self.current_char == "t":
@@ -203,14 +204,17 @@ class Lexer:
                 else:
                     string += self.current_char
             string += self.current_char
-            self._next_token()
+            self._next_token(False)
+        self._next_token()
+        self._add_token("STRING", string)
 
     def _make_number(self) -> None:
         number = ""
         is_float = False
-        while self.current_char in "0123456789._":
+        while self.current_char and self.current_char in "0123456789._":
             if self.current_char == ".":
                 is_float = True
+                number += self.current_char
                 self._next_token(False)
             elif self.current_char == "_":
                 self._next_token(False)

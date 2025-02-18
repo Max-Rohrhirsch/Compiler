@@ -23,6 +23,7 @@ def parse():
     _llvm_ir = generator.generate(o_ast)
     assembly = generator.assembly
     print("CodeGenerator:", _llvm_ir)
+    # print("Assembly:", assembly)
 
 
 if __name__ == '__main__':

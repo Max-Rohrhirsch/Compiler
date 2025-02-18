@@ -53,6 +53,10 @@ class CodeGenerator:
             self.generate_assignment(stmt)
         elif isinstance(stmt, Comment):
             self.generate_comment(stmt.value)
+        elif isinstance(stmt, WhileStatement):
+            self.generate_while_statement(stmt)
+        elif isinstance(stmt, ForStatement):
+            self.generate_for_statement(stmt)
         else:
             raise Exception(f"Unsupported statement type: {stmt}")
 
@@ -99,6 +103,74 @@ class CodeGenerator:
                 self.generate_statement(sub_stmt)
             self.builder.branch(merge_block)
 
+        self.builder.position_at_end(merge_block)
+
+    def generate_while_statement(self, stmt: WhileStatement) -> None:
+        # Bedingung der Schleife generieren
+        condition_block = self.builder.append_basic_block("while_condition")
+        body_block = self.builder.append_basic_block("while_body")
+        merge_block = self.builder.append_basic_block("while_merge")
+
+        # Sprung zur Bedingungsüberprüfung
+        self.builder.branch(condition_block)
+
+        # Positionierung am Anfang der Bedingungsüberprüfung
+        self.builder.position_at_end(condition_block)
+        cond_val = self.generate_expression(stmt.condition)
+        cond_bool = self.builder.icmp_signed('!=', cond_val, ir.Constant(ir.IntType(1), 0))
+        self.builder.cbranch(cond_bool, body_block, merge_block)
+
+        # Positionierung am Anfang des Schleifenkörpers
+        self.builder.position_at_end(body_block)
+        for sub_stmt in stmt.body:
+            self.generate_statement(sub_stmt)
+
+        # Sprung zurück zur Bedingungsüberprüfung
+        self.builder.branch(condition_block)
+
+        # Positionierung am Ende der Schleife
+        self.builder.position_at_end(merge_block)
+
+    def generate_for_statement(self, stmt: ForStatement) -> None:
+
+        if stmt.attributes[0].value not in self.variables:
+            iter_var = self.builder.alloca(ir.IntType(32), name=stmt.attributes[0].value)
+            self.variables[stmt.attributes[0].value] = iter_var
+        else:
+            iter_var = self.variables[stmt.attributes[0].value]
+
+        # Initialisierung der Schleifenvariable
+        start_value = self.generate_expression(stmt.value)
+        self.builder.store(start_value, iter_var)
+
+        # Blöcke für die Schleife
+        condition_block = self.builder.append_basic_block("for_condition")
+        body_block = self.builder.append_basic_block("for_body")
+        increment_block = self.builder.append_basic_block("for_increment")
+        merge_block = self.builder.append_basic_block("for_merge")
+
+        # Sprung zur Bedingungsüberprüfung
+        self.builder.branch(condition_block)
+
+        # Bedingung der Schleife
+        self.builder.position_at_end(condition_block)
+        current_val = self.builder.load(iter_var)
+        cond_bool = self.builder.icmp_signed('!=', current_val, ir.Constant(ir.IntType(32), 0))
+        self.builder.cbranch(cond_bool, body_block, merge_block)
+
+        # Schleifenkörper
+        self.builder.position_at_end(body_block)
+        for sub_stmt in stmt.body:
+            self.generate_statement(sub_stmt)
+        self.builder.branch(increment_block)
+
+        # Inkrementierung
+        self.builder.position_at_end(increment_block)
+        new_val = self.builder.add(current_val, ir.Constant(ir.IntType(32), 1))
+        self.builder.store(new_val, iter_var)
+        self.builder.branch(condition_block)
+
+        # Schleifenende
         self.builder.position_at_end(merge_block)
 
     def generate_expression(self, expr) -> ir.Value:

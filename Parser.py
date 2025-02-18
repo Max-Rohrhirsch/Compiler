@@ -47,6 +47,7 @@ Symbols = {
     ".": "DOT",
 }
 """
+
 ############################
 ## Parser class
 ############################
@@ -60,9 +61,9 @@ class Parser:
         self.tokens = tokens
         self.current = 0  # Current token index
 
-    def peek(self) -> Token:
+    def peek(self, step=0) -> Token:
         """Returns the current token without consuming it."""
-        return self.tokens[self.current] if self.current < len(self.tokens) else None
+        return self.tokens[self.current+step] if (self.current+step) < len(self.tokens) else None
 
     def advance(self) -> None:
         """Moves to the next token."""
@@ -91,6 +92,14 @@ class Parser:
         self.current += 1
         return token
 
+    def make_body(self) -> list[Node]:
+        self.consume("LBRACE")
+        then_body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            then_body.append(self.statement())
+        self.consume("RBRACE")
+        return then_body
+
     ############################
     ## MAIN FUNCTION
     ############################
@@ -108,10 +117,11 @@ class Parser:
 
     def statement(self) -> Node:
         """Parses statements like variable declarations and assignments."""
-        print("Parsing statement", self.peek())
         if self.match("KEYWORD", "VAR"):
             return self.var_declaration()
-        if self.match("IDENTIFIER"):
+        if self.peek(0).type == "IDENTIFIER":
+            if self.peek(1).type == "LPAREN":
+                return self.function_call()
             return self.assignment()  # OR function call
         if self.match("KEYWORD", "IF"):
             return self.if_statement()
@@ -123,6 +133,8 @@ class Parser:
             return self.for_statement()
         if self.match("KEYWORD", "FUNCTION"):
             return self.function_declaration()
+        if self.match("KEYWORD", "RETURN"):
+            return self.return_statement()
         raise SyntaxError("Invalid statement" + str(self.peek()))
 
     def var_declaration(self) -> VarDeclaration:
@@ -134,7 +146,7 @@ class Parser:
 
     def assignment(self) -> Assignment:
         """Parses: x = 10;"""
-        name = self.tokens[self.current - 1].value
+        name = self.consume("IDENTIFIER").value
         self.consume("ASSIGN")
         value = self.expression()
         return Assignment(name, value)
@@ -147,20 +159,12 @@ class Parser:
         condition = self.expression()
         self.consume("RPAREN")
 
-        self.consume("LBRACE")
-        then_body = []
-        while self.peek() and self.peek().type != "RBRACE":
-            then_body.append(self.statement())
-        self.consume("RBRACE")
-
+        then_body = self.make_body()
         else_body = None
         if self.peek() and self.peek().type == "ELSE":
             self.consume("ELSE")
-            self.consume("LBRACE")
-            else_body = []
-            while self.peek() and self.peek().type != "RBRACE":
-                else_body.append(self.statement())
-            self.consume("RBRACE")
+
+            then_body = self.make_body()
 
         return IfStatement(condition, then_body, else_body)
 
@@ -170,11 +174,7 @@ class Parser:
         condition = self.expression()
         self.consume("RPAREN")
 
-        self.consume("LBRACE")
-        body = []
-        while self.peek() and self.peek().type != "RBRACE":
-            body.append(self.statement())
-        self.consume("RBRACE")
+        body = self.make_body()
         return WhileStatement(condition, body)
 
     def for_statement(self) -> ForStatement:
@@ -188,11 +188,12 @@ class Parser:
             raise SyntaxError("Expected 'in' keyword in for loop")
 
         if self.peek().type == "INT":
-            value = self.consume("INT")
+            if self.peek(1).type == "RANGE":
+                value = self.range_expression()
+            else:
+                value = self.consume("INT")
         elif self.peek().type == "IDENTIFIER":
             value = self.consume("IDENTIFIER")
-        elif self.peek().type == "RANGE":
-            value = self.consume("RANGE")
         else:
             raise SyntaxError("Expected a number or variable")
 
@@ -223,7 +224,6 @@ class Parser:
 
     def return_statement(self) -> ReturnStatement:
         """Parses a return statement."""
-        self.consume("RETURN")
         value = self.expression()
         return ReturnStatement(value)
 
@@ -237,7 +237,8 @@ class Parser:
         self.consume("LPAREN")
         arguments = []
         while self.peek().type != "RPAREN":
-            arguments.append(self.expression())
+            # arguments.append(self.expression())
+            arguments.append(self.consume("STRING"))
             self.match("COMMA")
         self.consume("RPAREN")
         return FunctionCall(name, arguments)
@@ -262,11 +263,15 @@ class Parser:
         self.consume("RBRACE")
         return MatchStatement(value, match_statements)
 
-
-
     ############################
     ## EXPRESSION PARSING
     ############################
+    def range_expression(self) -> Range:
+        """Parses a range expression."""
+        start = self.consume("INT")
+        self.consume("RANGE")
+        end = self.consume("INT")
+        return Range(start, end)
 
     def expression(self) -> Node:
         """Parses an expression with logical OR (`||`)."""
@@ -293,7 +298,7 @@ class Parser:
     def comparison(self) -> BinaryOperation:
         """Parses comparison expressions (`<`, `>`, `<=`, `>=`)."""
         left = self.equality()
-        while self.match_set(("LESS", "LESS_EQUAL", "GREATER_THAN", "GREATER_EQUAL")):
+        while self.match_set(("LESS_THAN", "LESS_EQUAL", "GREATER_THAN", "GREATER_EQUAL")):
             operator = self.tokens[self.current - 1].type
             right = self.equality()
             left = BinaryOperation(left, operator, right)
