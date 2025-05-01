@@ -11,6 +11,16 @@ class CodeGenerator:
         self.function = None
         self.variables = {}
 
+        # Type mappings
+        self.type_map = {
+            "INT": ir.IntType(32),
+            "FLOAT": ir.FloatType(),
+            "BOOL": ir.IntType(1),
+            "CHAR": ir.IntType(8),
+            # String will be handled as char pointers
+            "STRING": ir.ArrayType(ir.IntType(8), 0).as_pointer(),
+        }
+
         # RESULTS
         self.llvm_ir = ""
         self.assembly = ""
@@ -22,6 +32,9 @@ class CodeGenerator:
         binding.initialize_native_asmprinter()
         self.module.triple = binding.get_default_triple()
 
+        # Add external functions like printf
+        self.declare_external_functions()
+        
         self.generate_main_function(node)
 
         self.llvm_ir = str(self.module)
@@ -33,8 +46,22 @@ class CodeGenerator:
         self.assembly = machine.emit_assembly(llvm_mod)
         return self.llvm_ir
 
+    def declare_external_functions(self):
+        """Declare external C functions like printf"""
+        # printf declaration
+        printf_ty = ir.FunctionType(ir.IntType(32), [ir.IntType(8).as_pointer()], var_arg=True)
+        printf = ir.Function(self.module, printf_ty, name="printf")
+        
+        # malloc declaration
+        malloc_ty = ir.FunctionType(ir.IntType(8).as_pointer(), [ir.IntType(64)])
+        malloc = ir.Function(self.module, malloc_ty, name="malloc")
+        
+        # free declaration
+        free_ty = ir.FunctionType(ir.VoidType(), [ir.IntType(8).as_pointer()])
+        free = ir.Function(self.module, free_ty, name="free")
+
     def generate_main_function(self, node: list[Node,]) -> None:
-        func_type = ir.FunctionType(ir.IntType(32), [ir.IntType(32)])
+        func_type = ir.FunctionType(ir.IntType(32), [])
         function = ir.Function(self.module, func_type, name="main")
         block = function.append_basic_block(name="entry")
         self.builder = ir.IRBuilder(block)
@@ -49,40 +76,110 @@ class CodeGenerator:
             self.generate_var_declaration(stmt)
         elif isinstance(stmt, IfStatement):
             self.generate_if_statement(stmt)
-        elif isinstance(stmt, Assignment):
-            self.generate_assignment(stmt)
-        elif isinstance(stmt, Comment):
-            self.generate_comment(stmt.value)
         elif isinstance(stmt, WhileStatement):
             self.generate_while_statement(stmt)
         elif isinstance(stmt, ForStatement):
             self.generate_for_statement(stmt)
+        elif isinstance(stmt, Assignment):
+            self.generate_assignment(stmt)
+        elif isinstance(stmt, UnaryOperation):
+            self.generate_unary_operation(stmt)
+        elif isinstance(stmt, FunctionCall):
+            self.generate_function_call(stmt)
+        elif isinstance(stmt, Comment):
+            self.generate_comment(stmt.value)
         else:
             raise Exception(f"Unsupported statement type: {stmt}")
 
     def generate_comment(self, stmt: str) -> None:
-        """ Fügt einen Kommentar hinzu """
-        self.builder.comment(stmt)
+        """ Adds a comment """
+        pass  # LLVM IR doesn't support comments directly
 
     def generate_var_declaration(self, stmt: VarDeclaration) -> None:
-        """ Erstellt eine Variable und speichert sie in der 'variables'-Map """
-        ptr = self.builder.alloca(ir.IntType(32), name=stmt.name)
+        """ Creates a variable and stores it in the 'variables' map """
+        data_type = stmt.data_type or self.infer_type(stmt.value)
+        llvm_type = self.type_map.get(data_type, ir.IntType(32))
+        
+        ptr = self.builder.alloca(llvm_type, name=stmt.name)
         if stmt.value:
             value = self.generate_expression(stmt.value)
+            # Convert if types don't match
+            value = self.convert_type(value, data_type)
             self.builder.store(value, ptr)
-        self.variables[stmt.name] = ptr
+        self.variables[stmt.name] = (ptr, data_type)
+
+    def convert_type(self, value, target_type):
+        """Converts a value to the target type if needed"""
+        if value.type == self.type_map.get(target_type):
+            return value
+            
+        # Int to float conversion
+        if value.type == ir.IntType(32) and target_type == "FLOAT":
+            return self.builder.sitofp(value, ir.FloatType())
+            
+        # Float to int conversion
+        if value.type == ir.FloatType() and target_type == "INT":
+            return self.builder.fptosi(value, ir.IntType(32))
+            
+        # Bool to int conversion
+        if value.type == ir.IntType(1) and target_type == "INT":
+            return self.builder.zext(value, ir.IntType(32))
+            
+        # Int to bool conversion
+        if value.type == ir.IntType(32) and target_type == "BOOL":
+            return self.builder.icmp_signed('!=', value, ir.Constant(ir.IntType(32), 0))
+            
+        return value  # Default to no conversion
+
+    def infer_type(self, expr) -> str:
+        """Infer the type of an expression"""
+        if isinstance(expr, Token):
+            return expr.type
+        elif isinstance(expr, BinaryOperation):
+            left_type = self.infer_type(expr.left)
+            right_type = self.infer_type(expr.right)
+            
+            # Comparisons always result in a boolean
+            if expr.operator in ("GREATER_THAN", "LESS_THAN", "EQUAL", "NOT_EQUAL", 
+                                "GREATER_THAN_EQUAL", "LESS_THAN_EQUAL"):
+                return "BOOL"
+                
+            # String concatenation
+            if expr.operator == "PLUS" and (left_type == "STRING" or right_type == "STRING"):
+                return "STRING"
+                
+            # Numeric operations result in float if any operand is float
+            if left_type == "FLOAT" or right_type == "FLOAT":
+                return "FLOAT"
+                
+            return "INT"  # Default to int for other operations
+            
+        return "INT"  # Default type
 
     def generate_assignment(self, stmt: Assignment) -> None:
-        """ Setzt eine bestehende Variable auf einen neuen Wert """
+        """ Sets an existing variable to a new value """
         if stmt.name not in self.variables:
             raise Exception(f"Variable {stmt.name} not declared!")
+            
+        ptr, var_type = self.variables[stmt.name]
         value = self.generate_expression(stmt.value)
-        self.builder.store(value, self.variables[stmt.name])
+        
+        # Convert value to variable type if needed
+        value = self.convert_type(value, var_type)
+        self.builder.store(value, ptr)
 
     def generate_if_statement(self, stmt: IfStatement) -> None:
-        """ Erstellt eine If-Else-Struktur """
+        """ Creates an If-Else structure """
         cond_val = self.generate_expression(stmt.condition)
-        cond_bool = self.builder.icmp_signed('!=', cond_val, ir.Constant(ir.IntType(32), 0))
+        
+        # Convert to boolean condition if needed
+        if cond_val.type != ir.IntType(1):
+            if cond_val.type == ir.FloatType():
+                cond_bool = self.builder.fcmp_ordered('!=', cond_val, ir.Constant(ir.FloatType(), 0.0))
+            else:
+                cond_bool = self.builder.icmp_signed('!=', cond_val, ir.Constant(cond_val.type, 0))
+        else:
+            cond_bool = cond_val
 
         if_then = self.builder.append_basic_block("if_then")
         if_else = self.builder.append_basic_block("if_else") if stmt.else_body else None
@@ -90,139 +187,4 @@ class CodeGenerator:
 
         self.builder.cbranch(cond_bool, if_then, if_else if if_else else merge_block)
 
-        # If-Block generieren
-        self.builder.position_at_end(if_then)
-        for sub_stmt in stmt.then_body:
-            self.generate_statement(sub_stmt)
-        self.builder.branch(merge_block)
-
-        # Else-Block (falls vorhanden)
-        if if_else:
-            self.builder.position_at_end(if_else)
-            for sub_stmt in stmt.else_body:
-                self.generate_statement(sub_stmt)
-            self.builder.branch(merge_block)
-
-        self.builder.position_at_end(merge_block)
-
-    def generate_while_statement(self, stmt: WhileStatement) -> None:
-        # Bedingung der Schleife generieren
-        condition_block = self.builder.append_basic_block("while_condition")
-        body_block = self.builder.append_basic_block("while_body")
-        merge_block = self.builder.append_basic_block("while_merge")
-
-        # Sprung zur Bedingungsüberprüfung
-        self.builder.branch(condition_block)
-
-        # Positionierung am Anfang der Bedingungsüberprüfung
-        self.builder.position_at_end(condition_block)
-        cond_val = self.generate_expression(stmt.condition)
-        cond_bool = self.builder.icmp_signed('!=', cond_val, ir.Constant(ir.IntType(1), 0))
-        self.builder.cbranch(cond_bool, body_block, merge_block)
-
-        # Positionierung am Anfang des Schleifenkörpers
-        self.builder.position_at_end(body_block)
-        for sub_stmt in stmt.body:
-            self.generate_statement(sub_stmt)
-
-        # Sprung zurück zur Bedingungsüberprüfung
-        self.builder.branch(condition_block)
-
-        # Positionierung am Ende der Schleife
-        self.builder.position_at_end(merge_block)
-
-    def generate_for_statement(self, stmt: ForStatement) -> None:
-
-        if stmt.attributes[0].value not in self.variables:
-            iter_var = self.builder.alloca(ir.IntType(32), name=stmt.attributes[0].value)
-            self.variables[stmt.attributes[0].value] = iter_var
-        else:
-            iter_var = self.variables[stmt.attributes[0].value]
-
-        # Initialisierung der Schleifenvariable
-        start_value = self.generate_expression(stmt.value)
-        self.builder.store(start_value, iter_var)
-
-        # Blöcke für die Schleife
-        condition_block = self.builder.append_basic_block("for_condition")
-        body_block = self.builder.append_basic_block("for_body")
-        increment_block = self.builder.append_basic_block("for_increment")
-        merge_block = self.builder.append_basic_block("for_merge")
-
-        # Sprung zur Bedingungsüberprüfung
-        self.builder.branch(condition_block)
-
-        # Bedingung der Schleife
-        self.builder.position_at_end(condition_block)
-        current_val = self.builder.load(iter_var)
-        cond_bool = self.builder.icmp_signed('!=', current_val, ir.Constant(ir.IntType(32), 0))
-        self.builder.cbranch(cond_bool, body_block, merge_block)
-
-        # Schleifenkörper
-        self.builder.position_at_end(body_block)
-        for sub_stmt in stmt.body:
-            self.generate_statement(sub_stmt)
-        self.builder.branch(increment_block)
-
-        # Inkrementierung
-        self.builder.position_at_end(increment_block)
-        new_val = self.builder.add(current_val, ir.Constant(ir.IntType(32), 1))
-        self.builder.store(new_val, iter_var)
-        self.builder.branch(condition_block)
-
-        # Schleifenende
-        self.builder.position_at_end(merge_block)
-
-    def generate_expression(self, expr) -> ir.Value:
-        """Generiert einen Wert oder eine binäre Operation."""
-        if isinstance(expr, BinaryOperation):
-            left = self.generate_expression(expr.left)
-            right = self.generate_expression(expr.right)
-
-            if expr.operator == Operators["+"]:
-                return self.builder.add(left, right)
-            elif expr.operator == Operators["-"]:
-                return self.builder.sub(left, right)
-            elif expr.operator == Operators["*"]:
-                return self.builder.mul(left, right)
-            elif expr.operator == Operators["/"]:
-                return self.builder.sdiv(left, right)
-            elif expr.operator == Operators["<"]:
-                return self.builder.icmp_signed('<', left, right)
-            elif expr.operator == Operators[">"]:
-                return self.builder.icmp_signed('>', left, right)
-            elif expr.operator == Operators["=="]:
-                return self.builder.icmp_signed('==', left, right)
-            elif expr.operator == Operators["!="]:
-                return self.builder.icmp_signed('!=', left, right)
-            else:
-                raise Exception(f"Unsupported operator {expr.operator}")
-
-        elif isinstance(expr, Token):
-            if expr.type == "INT":
-                return ir.Constant(ir.IntType(32), int(expr.value))
-            elif expr.type == "FLOAT":
-                return ir.Constant(ir.FloatType(), float(expr.value))
-            elif expr.type == "IDENTIFIER":
-                if expr.value in self.variables:
-                    return self.builder.load(self.variables[expr.value])
-                else:
-                    raise Exception(f"Undefined variable: {expr.value}")
-
-            else:
-                raise Exception(f"Unsupported token type {expr.type}")
-
-        elif isinstance(expr, str) and expr in self.variables:
-            return self.builder.load(self.variables[expr])
-
-        else:
-            raise Exception(f"Unknown expression type: {expr}")
-
-    def get_value(self, val):
-        """ Wandelt einen Wert um (Konstante oder Variable) """
-        if isinstance(val, int):
-            return ir.Constant(ir.IntType(32), val)
-        elif isinstance(val, str) and val in self.variables:
-            return self.builder.load(self.variables[val])
-        else:
-            raise Exception(f"Unknown value: {val}")
+        # Generate the then block

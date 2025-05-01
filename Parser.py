@@ -47,7 +47,6 @@ Symbols = {
     ".": "DOT",
 }
 """
-
 ############################
 ## Parser class
 ############################
@@ -61,9 +60,9 @@ class Parser:
         self.tokens = tokens
         self.current = 0  # Current token index
 
-    def peek(self, step=0) -> Token:
+    def peek(self) -> Token:
         """Returns the current token without consuming it."""
-        return self.tokens[self.current+step] if (self.current+step) < len(self.tokens) else None
+        return self.tokens[self.current] if self.current < len(self.tokens) else None
 
     def advance(self) -> None:
         """Moves to the next token."""
@@ -92,14 +91,6 @@ class Parser:
         self.current += 1
         return token
 
-    def make_body(self) -> list[Node]:
-        self.consume("LBRACE")
-        then_body = []
-        while self.peek() and self.peek().type != "RBRACE":
-            then_body.append(self.statement())
-        self.consume("RBRACE")
-        return then_body
-
     ############################
     ## MAIN FUNCTION
     ############################
@@ -107,7 +98,7 @@ class Parser:
     def parse(self) -> list[Node]:
         """Entry point for parsing: Parses a full program."""
         statements = []
-        while self.peek().type != "EOF":
+        while self.peek() and self.peek().type != "EOF":
             statements.append(self.statement())
         return statements
 
@@ -117,15 +108,27 @@ class Parser:
 
     def statement(self) -> Node:
         """Parses statements like variable declarations and assignments."""
+        print("Parsing statement", self.peek())
         if self.match("KEYWORD", "VAR"):
             return self.var_declaration()
-        if self.peek(0).type == "IDENTIFIER":
-            if self.peek(1).type == "LPAREN":
+        if self.match("IDENTIFIER"):
+            token_value = self.tokens[self.current - 1].value
+            # Check next token to determine if it's a function call, assignment or increment/decrement
+            if self.peek() and self.peek().type == "LPAREN":
+                self.current -= 1  # Go back to the identifier
                 return self.function_call()
-            return self.assignment()  # OR function call
+            elif self.peek() and self.peek().type == "INCREMENT":
+                self.advance()  # Consume ++
+                return UnaryOperation("INCREMENT", token_value)
+            elif self.peek() and self.peek().type == "DECREMENT":
+                self.advance()  # Consume --
+                return UnaryOperation("DECREMENT", token_value)
+            else:
+                self.current -= 1  # Go back to the identifier
+                return self.assignment()
         if self.match("KEYWORD", "IF"):
             return self.if_statement()
-        if self.peek().type == "COMMENT":
+        if self.peek() and self.peek().type == "COMMENT":
             return Comment(self.consume("COMMENT").value)
         if self.match("KEYWORD", "WHILE"):
             return self.while_statement()
@@ -133,9 +136,12 @@ class Parser:
             return self.for_statement()
         if self.match("KEYWORD", "FUNCTION"):
             return self.function_declaration()
+        if self.match("KEYWORD", "BREAK"):
+            return self.break_statement()
         if self.match("KEYWORD", "RETURN"):
             return self.return_statement()
-        raise SyntaxError("Invalid statement" + str(self.peek()))
+                
+        raise SyntaxError(f"Invalid statement: {self.peek()}")
 
     def var_declaration(self) -> VarDeclaration:
         """Parses: var x = 10;"""
@@ -153,49 +159,80 @@ class Parser:
 
     def if_statement(self) -> IfStatement:
         """Parses an if-statement into an AST node."""
-        # self.consume("IF")
-
-        self.consume("LPAREN")
+        # Check if there are parentheses (optional in this language)
+        has_parens = False
+        if self.peek() and self.peek().type == "LPAREN":
+            self.consume("LPAREN")
+            has_parens = True
+            
         condition = self.expression()
-        self.consume("RPAREN")
+        
+        if has_parens:
+            self.consume("RPAREN")
 
-        then_body = self.make_body()
+        self.consume("LBRACE")
+        then_body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            then_body.append(self.statement())
+        self.consume("RBRACE")
+
         else_body = None
-        if self.peek() and self.peek().type == "ELSE":
-            self.consume("ELSE")
-
-            then_body = self.make_body()
+        if self.peek() and self.peek().type == "KEYWORD" and self.peek().value == "ELSE":
+            self.advance()  # Consume ELSE
+            self.consume("LBRACE")
+            else_body = []
+            while self.peek() and self.peek().type != "RBRACE":
+                else_body.append(self.statement())
+            self.consume("RBRACE")
 
         return IfStatement(condition, then_body, else_body)
 
     def while_statement(self) -> WhileStatement:
         """Parses a while-statement into an AST node."""
-        self.consume("LPAREN")
+        # Check if there are parentheses (optional in this language)
+        has_parens = False
+        if self.peek() and self.peek().type == "LPAREN":
+            self.consume("LPAREN")
+            has_parens = True
+            
         condition = self.expression()
-        self.consume("RPAREN")
+        
+        if has_parens:
+            self.consume("RPAREN")
 
-        body = self.make_body()
+        self.consume("LBRACE")
+        body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            body.append(self.statement())
+        self.consume("RBRACE")
         return WhileStatement(condition, body)
 
     def for_statement(self) -> ForStatement:
         """Parses a for-statement into an AST node."""
-        attributes = [self.consume("IDENTIFIER")]
-
+        identifier = self.consume("IDENTIFIER").value
+        
+        # Save the identifier name
+        attributes = [identifier]
+        
+        # Check for comma-separated identifiers
         while self.match("COMMA"):
-            attributes.append(self.consume("IDENTIFIER"))
+            attributes.append(self.consume("IDENTIFIER").value)
 
-        if not self.match("KEYWORD", "IN"):
-            raise SyntaxError("Expected 'in' keyword in for loop")
-
-        if self.peek().type == "INT":
-            if self.peek(1).type == "RANGE":
-                value = self.range_expression()
-            else:
-                value = self.consume("INT")
-        elif self.peek().type == "IDENTIFIER":
-            value = self.consume("IDENTIFIER")
+        # Check for 'in' keyword
+        if self.peek() and self.peek().type == "KEYWORD" and self.peek().value == "IN":
+            self.advance()  # Consume 'in'
         else:
-            raise SyntaxError("Expected a number or variable")
+            # Support loops without 'in' keyword
+            pass
+
+        # Get the value to iterate over
+        if self.peek() and self.peek().type == "INT":
+            value = self.consume("INT").value
+        elif self.peek() and self.peek().type == "IDENTIFIER":
+            value = self.consume("IDENTIFIER").value
+        else:
+            # Try as an expression
+            value = self.expression()
 
         self.consume("LBRACE")
         body = []
@@ -210,14 +247,15 @@ class Parser:
 
         self.consume("LPAREN")
         parameters = []
-        while self.peek().type != "RPAREN":
-            parameters.append(self.consume("IDENTIFIER"))
-            self.match("COMMA")
+        if self.peek() and self.peek().type != "RPAREN":
+            parameters.append(self.consume("IDENTIFIER").value)
+            while self.match("COMMA"):
+                parameters.append(self.consume("IDENTIFIER").value)
         self.consume("RPAREN")
 
         self.consume("LBRACE")
         body = []
-        while self.peek().type != "RBRACE":
+        while self.peek() and self.peek().type != "RBRACE":
             body.append(self.statement())
         self.consume("RBRACE")
         return FunctionDeclaration(name, "VOID", parameters, body)
@@ -236,29 +274,29 @@ class Parser:
 
         self.consume("LPAREN")
         arguments = []
-        while self.peek().type != "RPAREN":
-            # arguments.append(self.expression())
-            arguments.append(self.consume("STRING"))
-            self.match("COMMA")
+        if self.peek() and self.peek().type != "RPAREN":
+            arguments.append(self.expression())
+            while self.match("COMMA"):
+                arguments.append(self.expression())
         self.consume("RPAREN")
         return FunctionCall(name, arguments)
 
     def match_statement(self) -> MatchStatement:
         """Parses a match case."""
-        self.consume("Match")
-        value = self.consume("IDENTIFIER")
+        self.consume("KEYWORD", "MATCH")
+        value = self.consume("IDENTIFIER").value
 
         self.consume("LBRACE")
         match_statements = []
-        while self.peek().type != "ELSE" and self.peek().type != "RBRACE":
-            value = self.expression()
+        while self.peek() and (self.peek().type != "KEYWORD" or self.peek().value != "ELSE") and self.peek().type != "RBRACE":
+            case_value = self.expression()
             self.consume("ARROW")
             return_value = self.expression()
-            match_statements.append(MatchCase(value, return_value))
+            match_statements.append(MatchCase(case_value, return_value))
 
-        if self.match("ELSE"):
+        if self.match("KEYWORD", "ELSE"):
             self.consume("ARROW")
-            match_statements.append(self.expression())
+            match_statements.append(MatchCase(None, self.expression()))
 
         self.consume("RBRACE")
         return MatchStatement(value, match_statements)
@@ -266,77 +304,86 @@ class Parser:
     ############################
     ## EXPRESSION PARSING
     ############################
-    def range_expression(self) -> Range:
-        """Parses a range expression."""
-        start = self.consume("INT")
-        self.consume("RANGE")
-        end = self.consume("INT")
-        return Range(start, end)
 
     def expression(self) -> Node:
         """Parses an expression with logical OR (`||`)."""
         return self.logical_or()
 
-    def logical_or(self) -> BinaryOperation:
+    def logical_or(self) -> Node:
         """Parses logical OR (`||`) expressions."""
         left = self.logical_and()
-        while self.match("OR"):
-            operator = "||"
+        while self.peek() and self.peek().type == "OR":
+            operator = self.consume("OR").type
             right = self.logical_and()
             left = BinaryOperation(left, operator, right)
         return left
 
-    def logical_and(self) -> BinaryOperation:
+    def logical_and(self) -> Node:
         """Parses logical AND (`&&`) expressions."""
-        left = self.comparison()
-        while self.match("AND"):
-            operator = "&&"
-            right = self.comparison()
-            left = BinaryOperation(left, operator, right)
-        return left
-
-    def comparison(self) -> BinaryOperation:
-        """Parses comparison expressions (`<`, `>`, `<=`, `>=`)."""
         left = self.equality()
-        while self.match_set(("LESS_THAN", "LESS_EQUAL", "GREATER_THAN", "GREATER_EQUAL")):
-            operator = self.tokens[self.current - 1].type
+        while self.peek() and self.peek().type == "AND":
+            operator = self.consume("AND").type
             right = self.equality()
             left = BinaryOperation(left, operator, right)
         return left
 
-    def equality(self) -> BinaryOperation:
+    def equality(self) -> Node:
         """Parses equality expressions (`==`, `!=`)."""
+        left = self.comparison()
+        while self.peek() and (self.peek().type == "EQUAL" or self.peek().type == "NOT_EQUAL"):
+            operator = self.consume(self.peek().type).type
+            right = self.comparison()
+            left = BinaryOperation(left, operator, right)
+        return left
+
+    def comparison(self) -> Node:
+        """Parses comparison expressions (`<`, `>`, `<=`, `>=`)."""
         left = self.addition()
-        while self.match("EQUAL_EQUAL", "BANG_EQUAL"):
-            operator = self.tokens[self.current - 1].type
+        while self.peek() and self.peek().type in ("LESS_THAN", "LESS_THAN_EQUAL", "GREATER_THAN", "GREATER_THAN_EQUAL"):
+            operator = self.consume(self.peek().type).type
             right = self.addition()
             left = BinaryOperation(left, operator, right)
         return left
 
-    def addition(self) -> BinaryOperation:
+    def addition(self) -> Node:
         """Parses expressions with '+' and '-'."""
         left = self.multiplication()
-        while self.match("PLUS") or self.match("MINUS"):
-            operator = self.tokens[self.current - 1].type
+        while self.peek() and (self.peek().type == "PLUS" or self.peek().type == "MINUS"):
+            operator = self.consume(self.peek().type).type
             right = self.multiplication()
             left = BinaryOperation(left, operator, right)
         return left
 
-    def multiplication(self) -> BinaryOperation:
+    def multiplication(self) -> Node:
         """Parses expressions with '*' and '/'."""
         left = self.primary()
-        while self.match("STAR") or self.match("SLASH"):
-            operator = self.tokens[self.current - 1].type
+        while self.peek() and (self.peek().type == "MUL" or self.peek().type == "DIV" or self.peek().type == "MOD"):
+            operator = self.consume(self.peek().type).type
             right = self.primary()
             left = BinaryOperation(left, operator, right)
         return left
 
-    def primary(self) -> Token:
+    def primary(self) -> Node:
         """Parses literals (numbers and identifiers)."""
-        if self.match("INT"):
-            return self.tokens[self.current - 1]
-        if self.match("FLOAT"):
-            return self.tokens[self.current - 1]
-        if self.match("IDENTIFIER"):
-            return self.tokens[self.current - 1]
-        raise SyntaxError("Expected a number or variable")
+        if self.peek() and self.peek().type == "INT":
+            return self.consume("INT")
+        if self.peek() and self.peek().type == "FLOAT":
+            return self.consume("FLOAT")
+        if self.peek() and self.peek().type == "IDENTIFIER":
+            token = self.consume("IDENTIFIER")
+            # Check if it's a function call
+            if self.peek() and self.peek().type == "LPAREN":
+                self.current -= 1  # Go back to the identifier
+                return self.function_call()
+            return token
+        if self.peek() and self.peek().type == "LPAREN":
+            self.consume("LPAREN")
+            expr = self.expression()
+            self.consume("RPAREN")
+            return expr
+        if self.peek() and self.peek().type == "STRING":
+            return self.consume("STRING")
+        if self.peek() and self.peek().type == "BOOL":
+            return self.consume("BOOL")
+            
+        raise SyntaxError(f"Expected a primary expression, got {self.peek() and self.peek().type}")
