@@ -65,14 +65,15 @@ class ForStatement(Node):
 
 
 class VarDeclaration(Node):
-    def __init__(self, name: str, value: any):
+    def __init__(self, name: str, value: any, data_type=None, var_type="VAR"):
         super().__init__("VarDeclaration")
         self.name = name
-        self.data_type = None
+        self.data_type = data_type  # INT, FLOAT, STRING, etc.
         self.value = value
+        self.var_type = var_type  # VAR, CONST, TEMP, etc.
 
     def __repr__(self):
-        return f"VarDeclaration({self.data_type} {self.name} = {self.value})"
+        return f"VarDeclaration({self.var_type} {self.data_type} {self.name} = {self.value})"
 
 
 class Assignment(Node):
