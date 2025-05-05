@@ -9,6 +9,7 @@ Keywords = [
     "ELSE",
     "WHILE",
     "FOR",
+    "IN",
     "BREAK",
     "CONTINUE",
     "RETURN",
@@ -97,6 +98,7 @@ Symbols = {
     ";": "SEMICOLON",
     ":": "COLON",
     ".": "DOT",
+    "?": "NULLABLE",  # Added nullable type marker
 }
 
 
@@ -156,8 +158,20 @@ class Lexer:
                 self._make_number()
             elif self.current_char in "\"'":
                 self._make_string()
+            elif self.current_char == "/" and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == "/":
+                self._make_comment()
             elif self.current_char == "#":
                 self._make_comment()
+            elif self.current_char == "." and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == ".":
+                # Handle range operator ".."
+                self._add_token("RANGE", None)
+                self._next_token(False)  # Skip first dot
+                self._next_token()       # Skip second dot
+            elif self.current_char == "?" and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == "?":
+                # Handle null coalescing operator "??"
+                self._add_token("NULL_COALESCING", None)
+                self._next_token(False)  # Skip first question mark
+                self._next_token()       # Skip second question mark
             elif self.current_char in Operators:
                 operator = self.current_char
                 self._next_token(False)
@@ -248,19 +262,26 @@ class Lexer:
         last_line: int = self.line
         last_column: int = self.column
         
-        while self.current_char is not None and (self.current_char.isdigit() or self.current_char in "._"):
-            if self.current_char == ".":
-                if is_float:
-                    self._error("Invalid number format: multiple decimal points")
-                is_float = True
+        # Process integer part
+        while self.current_char is not None and self.current_char.isdigit():
+            number += self.current_char
+            self._next_token(False)
+        
+        # Check for decimal point (but not range operator)
+        if (self.current_char == '.' and 
+            (self.pos + 1 >= len(self.input) or 
+             self.input[self.pos + 1] != '.')):
+            
+            is_float = True
+            number += self.current_char
+            self._next_token(False)
+            
+            # Process decimal part
+            while self.current_char is not None and self.current_char.isdigit():
                 number += self.current_char
                 self._next_token(False)
-            elif self.current_char == "_":
-                self._next_token(False)  # Skip underscores (e.g., 1_000_000)
-            else:
-                number += self.current_char
-                self._next_token(False)
-                
+        
+        # Create the appropriate token
         if is_float:
             self._add_token("FLOAT", float(number), last_line, last_column)
         else:

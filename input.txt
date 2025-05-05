@@ -1,8 +1,73 @@
-while (3 < 5 +6) {
-    var a = 5
+// Comprehensive language test file
+
+// 1. Basic variable declarations with explicit types
+var int a = 5
+var float pi = 3.14
+const string message = "Hello, World!"
+temp bool flag = true
+
+// 2. Control flow
+if (a > 3) {
+    print(message)
+} else {
+    print("a is too small")
 }
-var x = 4
-for i in x {
+
+// 3. While loop
+var i = 0
+while (i < 3) {
     print(i)
+    i++
 }
+
+// 4. For loop with range
+for j in 1..5 {
+    print(j)
+}
+
+// 5. Increment/decrement operations
+var x = 10
 x++
+print(x)
+x--
+print(x)
+
+// 6. Custom integer types
+var i32 bigNumber = 2000000000
+var i8 smallNumber = 100
+print(bigNumber)
+print(smallNumber)
+
+// 7. Nullable types
+var int? nullableInt = null
+print(nullableInt ?? 42)  // Null coalescing operator
+
+// 8. Class declaration
+class Person {
+    var string name = "John"
+    var int age = 30
+    
+    constructor Person(name, age) {
+        this.name = name
+        this.age = age
+    }
+    
+    function getInfo() {
+        return name + " is " + age + " years old"
+    }
+}
+
+// 9. Dataclass
+dataclass Point(int x, int y)
+
+// 10. Match statement
+var day = 2
+match (day) {
+    1 -> print("Monday")
+    2 -> print("Tuesday")
+    3 -> print("Wednesday")
+    else -> print("Other day")
+}
+
+// 11. Import statement
+import{c} stdio

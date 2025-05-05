@@ -175,6 +175,51 @@ class LambdaFunction(Node):
     def __repr__(self):
         return f"LambdaFunction({self.parameters}, {self.body})"
 
+class ClassDeclaration(Node):
+    def __init__(self, name, properties, methods, constructor=None):
+        self.name = name
+        self.properties = properties
+        self.methods = methods
+        self.constructor = constructor
+        
+class ConstructorDeclaration(Node):
+    def __init__(self, name, parameters, body):
+        self.name = name
+        self.parameters = parameters
+        self.body = body
+        
+class DataclassDeclaration(Node):
+    def __init__(self, name, fields):
+        self.name = name
+        self.fields = fields
+        
+class DataclassField(Node):
+    def __init__(self, name, data_type=None, nullable=False):
+        self.name = name
+        self.data_type = data_type
+        self.nullable = nullable
+        
+class ImportStatement(Node):
+    def __init__(self, target, language=None):
+        self.target = target
+        self.language = language
+        
+class MatchStatement(Node):
+    def __init__(self, value, cases):
+        self.value = value
+        self.cases = cases
+        
+class MatchCase(Node):
+    def __init__(self, case_value, return_value):
+        self.case_value = case_value  # None for else case
+        self.return_value = return_value
+        
+class Range(Node):
+    def __init__(self, start, end, step=None):
+        self.start = start
+        self.end = end
+        self.step = step
+
 
 ######################
 ## Special
@@ -235,4 +280,14 @@ class Attribute(Node):
 
     def __repr__(self):
         return f"Attribute({self.name}, {self.value})"
+
+class PropertyAssignment(Node):
+    def __init__(self, object_name, property_name, value):
+        super().__init__("PropertyAssignment")
+        self.object_name = object_name
+        self.property_name = property_name
+        self.value = value
+        
+    def __repr__(self):
+        return f"PropertyAssignment({self.object_name}.{self.property_name} = {self.value})"
 

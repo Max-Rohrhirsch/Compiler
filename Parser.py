@@ -64,9 +64,11 @@ class Parser:
         """Returns the current token without consuming it."""
         return self.tokens[self.current] if self.current < len(self.tokens) else None
 
-    def advance(self) -> None:
-        """Moves to the next token."""
+    def advance(self) -> Token:
+        """Moves to the next token and returns it."""
+        token = self.peek()
         self.current += 1
+        return token
 
     def match_set(self, expected_type: tuple[str, ...]) -> bool:
         for expected_type in expected_type:
@@ -83,11 +85,13 @@ class Parser:
             return True
         return False
 
-    def consume(self, expected_type: str) -> Token:
-        """Consume a token and move to the next."""
+    def consume(self, expected_type: str, expected_value=None) -> Token:
+        """Consume a token and move to the next. Optionally check its value."""
         token = self.peek()
         if token is None or token.type != expected_type:
             raise SyntaxError(f"Expected {expected_type}, but got {token.type if token else 'EOF'}")
+        if expected_value is not None and token.value != expected_value:
+            raise SyntaxError(f"Expected {expected_type} with value {expected_value}, but got {token.value}")
         self.current += 1
         return token
 
@@ -110,7 +114,13 @@ class Parser:
         """Parses statements like variable declarations and assignments."""
         print("Parsing statement", self.peek())
         if self.match("KEYWORD", "VAR"):
-            return self.var_declaration()
+            return self.var_declaration("VAR")
+        if self.match("KEYWORD", "CONST"):
+            return self.var_declaration("CONST")
+        if self.match("KEYWORD", "TEMP"):
+            return self.var_declaration("TEMP")
+        if self.match("KEYWORD", "POINTER"):
+            return self.var_declaration("POINTER")
         if self.match("IDENTIFIER"):
             token_value = self.tokens[self.current - 1].value
             # Check next token to determine if it's a function call, assignment or increment/decrement
@@ -123,6 +133,9 @@ class Parser:
             elif self.peek() and self.peek().type == "DECREMENT":
                 self.advance()  # Consume --
                 return UnaryOperation("DECREMENT", token_value)
+            elif self.peek() and self.peek().type == "DOT":
+                self.current -= 1  # Go back to the identifier
+                return self.property_assignment()
             else:
                 self.current -= 1  # Go back to the identifier
                 return self.assignment()
@@ -140,15 +153,62 @@ class Parser:
             return self.break_statement()
         if self.match("KEYWORD", "RETURN"):
             return self.return_statement()
+        if self.match("KEYWORD", "CLASS"):
+            return self.class_declaration()
+        if self.match("KEYWORD", "DATACLASS"):
+            return self.dataclass_declaration()
+        if self.match("KEYWORD", "MATCH"):
+            return self.match_statement()
+        if self.match("KEYWORD", "IMPORT"):
+            return self.import_statement()
                 
         raise SyntaxError(f"Invalid statement: {self.peek()}")
-
-    def var_declaration(self) -> VarDeclaration:
-        """Parses: var x = 10;"""
-        name = self.consume("IDENTIFIER").value
+        
+    def property_assignment(self) -> PropertyAssignment:
+        """Parses: this.name = value;"""
+        object_name = self.consume("IDENTIFIER").value
+        self.consume("DOT")
+        property_name = self.consume("IDENTIFIER").value
         self.consume("ASSIGN")
         value = self.expression()
-        return VarDeclaration(name, value)
+        return PropertyAssignment(object_name, property_name, value)
+
+    def var_declaration(self, var_type="VAR") -> VarDeclaration:
+        """Parses: var [type] x = 10; or const int x = 5 or var int? x = null"""
+        data_type = None
+        nullable = False
+        
+        # Check for explicit data type
+        if self.peek() and self.peek().type == "KEYWORD":
+            data_type = self.advance().value
+            
+            # Check for nullability marker right after the type
+            if self.peek() and self.peek().type == "NULLABLE":
+                nullable = True
+                self.advance()  # Consume '?'
+        elif self.peek() and self.peek().type == "IDENTIFIER":
+            # For custom types like i32, ui16, etc.
+            type_token = self.peek()
+            if type_token.value in ["i8", "i16", "i32", "i64", "ui8", "ui16", "ui32", "ui64", 
+                                   "f32", "f64", "list", "dict", "array", "stack", "queue", "regex"]:
+                data_type = self.advance().value
+                
+                # Check for nullability marker right after the type
+                if self.peek() and self.peek().type == "NULLABLE":
+                    nullable = True
+                    self.advance()  # Consume '?'
+        
+        # Now expect the variable name identifier
+        name = self.consume("IDENTIFIER").value
+        
+        self.consume("ASSIGN")
+        value = self.expression()
+        
+        # Create the variable declaration with all details
+        decl = VarDeclaration(name, value, data_type, var_type)
+        decl.nullable = nullable
+        
+        return decl
 
     def assignment(self) -> Assignment:
         """Parses: x = 10;"""
@@ -211,13 +271,9 @@ class Parser:
         """Parses a for-statement into an AST node."""
         identifier = self.consume("IDENTIFIER").value
         
-        # Save the identifier name
-        attributes = [identifier]
+        # Save the identifier name as an attribute
+        attributes = [Attribute("name", identifier)]
         
-        # Check for comma-separated identifiers
-        while self.match("COMMA"):
-            attributes.append(self.consume("IDENTIFIER").value)
-
         # Check for 'in' keyword
         if self.peek() and self.peek().type == "KEYWORD" and self.peek().value == "IN":
             self.advance()  # Consume 'in'
@@ -225,11 +281,17 @@ class Parser:
             # Support loops without 'in' keyword
             pass
 
-        # Get the value to iterate over
+        # Handle range expression: 1..5
         if self.peek() and self.peek().type == "INT":
-            value = self.consume("INT").value
+            start_value = self.consume("INT")
+            if self.peek() and self.peek().type == "RANGE":
+                self.advance()  # Consume '..'
+                end_value = self.consume("INT")
+                value = Range(start_value, end_value, None)  # Third param is step (not used here)
+            else:
+                value = start_value  # Simple numeric iterator
         elif self.peek() and self.peek().type == "IDENTIFIER":
-            value = self.consume("IDENTIFIER").value
+            value = self.consume("IDENTIFIER").value  # Iterating over a collection
         else:
             # Try as an expression
             value = self.expression()
@@ -243,6 +305,14 @@ class Parser:
 
     def function_declaration(self) -> FunctionDeclaration:
         """Parses a function declaration."""
+        self.advance()  # Consume FUNCTION keyword
+        
+        # Check for optional return type
+        return_type = "VOID"
+        if self.peek() and self.peek().type == "KEYWORD":
+            return_type = self.advance().value
+            
+        # Function name
         name = self.consume("IDENTIFIER").value
 
         self.consume("LPAREN")
@@ -258,7 +328,7 @@ class Parser:
         while self.peek() and self.peek().type != "RBRACE":
             body.append(self.statement())
         self.consume("RBRACE")
-        return FunctionDeclaration(name, "VOID", parameters, body)
+        return FunctionDeclaration(name, return_type, parameters, body)
 
     def return_statement(self) -> ReturnStatement:
         """Parses a return statement."""
@@ -275,31 +345,131 @@ class Parser:
         self.consume("LPAREN")
         arguments = []
         if self.peek() and self.peek().type != "RPAREN":
-            arguments.append(self.expression())
+            arguments.append(self.null_coalescing())  # Use null_coalescing instead of expression directly
             while self.match("COMMA"):
-                arguments.append(self.expression())
+                arguments.append(self.null_coalescing())  # Same here
         self.consume("RPAREN")
         return FunctionCall(name, arguments)
 
     def match_statement(self) -> MatchStatement:
-        """Parses a match case."""
-        self.consume("KEYWORD", "MATCH")
-        value = self.consume("IDENTIFIER").value
+        """Parses a match statement."""
+        # The MATCH keyword was already consumed in the statement method
+        self.consume("LPAREN")  # Consume the opening parenthesis
+        value = self.expression()  # Parse the value to match against
+        self.consume("RPAREN")  # Consume the closing parenthesis
 
         self.consume("LBRACE")
-        match_statements = []
-        while self.peek() and (self.peek().type != "KEYWORD" or self.peek().value != "ELSE") and self.peek().type != "RBRACE":
+        cases = []
+        
+        # Process each case until we hit the closing brace or ELSE
+        while self.peek() and self.peek().type != "RBRACE" and (self.peek().type != "KEYWORD" or self.peek().value != "ELSE"):
             case_value = self.expression()
             self.consume("ARROW")
             return_value = self.expression()
-            match_statements.append(MatchCase(case_value, return_value))
+            cases.append(MatchCase(case_value, return_value))
 
-        if self.match("KEYWORD", "ELSE"):
+        # Handle the optional ELSE case
+        if self.peek() and self.peek().type == "KEYWORD" and self.peek().value == "ELSE":
+            self.advance()  # Consume ELSE
             self.consume("ARROW")
-            match_statements.append(MatchCase(None, self.expression()))
+            return_value = self.expression()
+            cases.append(MatchCase(None, return_value))  # None means default case
 
         self.consume("RBRACE")
-        return MatchStatement(value, match_statements)
+        return MatchStatement(value, cases)
+
+    def class_declaration(self) -> ClassDeclaration:
+        """Parses a class declaration."""
+        name = self.consume("IDENTIFIER").value
+        
+        self.consume("LBRACE")
+        methods = []
+        properties = []
+        constructor = None
+        
+        while self.peek() and self.peek().type != "RBRACE":
+            if self.peek() and self.peek().type == "KEYWORD":
+                if self.peek().value == "VAR":
+                    # Handle variable declaration with the appropriate var_type
+                    self.advance()  # Consume VAR
+                    properties.append(self.var_declaration("VAR"))
+                elif self.peek().value == "FUNCTION":
+                    methods.append(self.function_declaration())
+                elif self.peek().value == "CONSTRUCTOR":
+                    constructor = self.constructor_declaration()
+                else:
+                    # Skip unknown keywords
+                    self.advance()
+            else:
+                # Skip unknown class members
+                self.advance()
+        
+        self.consume("RBRACE")
+        return ClassDeclaration(name, properties, methods, constructor)
+
+    def constructor_declaration(self) -> ConstructorDeclaration:
+        """Parses a constructor declaration."""
+        self.consume("KEYWORD", "CONSTRUCTOR")
+        name = self.consume("IDENTIFIER").value
+        
+        self.consume("LPAREN")
+        parameters = []
+        if self.peek() and self.peek().type != "RPAREN":
+            parameters.append(self.consume("IDENTIFIER").value)
+            while self.match("COMMA"):
+                parameters.append(self.consume("IDENTIFIER").value)
+        self.consume("RPAREN")
+        
+        self.consume("LBRACE")
+        body = []
+        while self.peek() and self.peek().type != "RBRACE":
+            body.append(self.statement())
+        self.consume("RBRACE")
+        
+        return ConstructorDeclaration(name, parameters, body)
+        
+    def dataclass_declaration(self) -> DataclassDeclaration:
+        """Parses a dataclass declaration."""
+        name = self.consume("IDENTIFIER").value
+        
+        self.consume("LPAREN")
+        fields = []
+        if self.peek() and self.peek().type != "RPAREN":
+            # Parse fields with types
+            data_type = None
+            if self.peek() and self.peek().type == "KEYWORD":
+                data_type = self.advance().value  # Get type
+                
+            field_name = self.consume("IDENTIFIER").value
+            fields.append(DataclassField(field_name, data_type))
+            
+            while self.match("COMMA"):
+                data_type = None
+                if self.peek() and self.peek().type == "KEYWORD":
+                    data_type = self.advance().value  # Get type
+                    
+                field_name = self.consume("IDENTIFIER").value
+                fields.append(DataclassField(field_name, data_type))
+                
+        self.consume("RPAREN")
+        
+        return DataclassDeclaration(name, fields)
+        
+    def import_statement(self) -> ImportStatement:
+        """Parses import statements."""
+        target = None
+        language = None
+        
+        # Check for language specifier in braces
+        if self.peek() and self.peek().type == "LBRACE":
+            self.consume("LBRACE")
+            language = self.consume("IDENTIFIER").value
+            self.consume("RBRACE")
+        
+        # Get the imported module/library name
+        target = self.consume("IDENTIFIER").value
+        
+        return ImportStatement(target, language)
 
     ############################
     ## EXPRESSION PARSING
@@ -307,7 +477,19 @@ class Parser:
 
     def expression(self) -> Node:
         """Parses an expression with logical OR (`||`)."""
-        return self.logical_or()
+        return self.null_coalescing()  # Add null coalescing as first step
+
+    def null_coalescing(self) -> Node:
+        """Parses null coalescing expressions with `??` operator."""
+        left = self.logical_or()
+        
+        # Handle null coalescing operator
+        while self.peek() and self.peek().type == "NULL_COALESCING":
+            self.advance()  # Consume the ?? operator
+            right = self.logical_or()
+            left = BinaryOperation(left, "NULL_COALESCING", right)
+            
+        return left
 
     def logical_or(self) -> Node:
         """Parses logical OR (`||`) expressions."""
