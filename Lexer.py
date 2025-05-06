@@ -32,7 +32,15 @@ Keywords = [
 
     "IMPORT",
     "INCLUDE",
-    "FROM"
+    "FROM",
+    
+    # Data types
+    "INT",
+    "FLOAT",
+    "STRING",
+    "BOOL",
+    "CHAR",
+    "VOID"
 ]
 
 Operators = {
@@ -41,6 +49,7 @@ Operators = {
     "*": "MUL",
     "/": "DIV",
     "%": "MOD",
+    "**": "POW",  # Exponentiation
 
     "=": "ASSIGN",
     "+=": "PLUS_ASSIGN",
@@ -48,6 +57,7 @@ Operators = {
     "*=": "MUL_ASSIGN",
     "/=": "DIV_ASSIGN",
     "%=": "MOD_ASSIGN",
+    "**=": "POW_ASSIGN",
 
     "==": "EQUAL",
     "!=": "NOT_EQUAL",
@@ -88,6 +98,7 @@ Symbols = {
     ";": "SEMICOLON",
     ":": "COLON",
     ".": "DOT",
+    "?": "NULLABLE",  # Added nullable type marker
 }
 
 
@@ -147,14 +158,26 @@ class Lexer:
                 self._make_number()
             elif self.current_char in "\"'":
                 self._make_string()
+            elif self.current_char == "/" and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == "/":
+                self._make_comment()
             elif self.current_char == "#":
                 self._make_comment()
+            elif self.current_char == "." and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == ".":
+                # Handle range operator ".."
+                self._add_token("RANGE", None)
+                self._next_token(False)  # Skip first dot
+                self._next_token()       # Skip second dot
+            elif self.current_char == "?" and self.pos + 1 < len(self.input) and self.input[self.pos + 1] == "?":
+                # Handle null coalescing operator "??"
+                self._add_token("NULL_COALESCING", None)
+                self._next_token(False)  # Skip first question mark
+                self._next_token()       # Skip second question mark
             elif self.current_char in Operators:
                 operator = self.current_char
-                self._next_token()
-                if self.current_char in Operators:
+                self._next_token(False)
+                if self.current_char is not None and operator + self.current_char in Operators:
                     operator += self.current_char
-                    self._next_token()
+                    self._next_token(False)
                 self._add_token(Operators[operator], None)
             elif self.current_char in Symbols:
                 self._add_token(Symbols[self.current_char], None)
@@ -172,7 +195,7 @@ class Lexer:
     def _make_comment(self) -> None:
         comment = ""
         self._next_token(False)
-        while self.current_char != "\n":
+        while self.current_char is not None and self.current_char != "\n":
             comment += self.current_char
             self._next_token(False)
         self._add_token("COMMENT", comment)
@@ -182,46 +205,84 @@ class Lexer:
         last_line: int = self.line
         last_column: int = self.column
 
-        while self.current_char.isalpha() or self.current_char == "_":
+        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == "_"):
             identifier += self.current_char
             self._next_token(False)
+            
         if identifier.upper() in Keywords:
-            self._add_token("KEYWORD", identifier.upper(), last_line, last_column)
+            if identifier.upper() == "TRUE":
+                self._add_token("BOOL", True, last_line, last_column)
+            elif identifier.upper() == "FALSE":
+                self._add_token("BOOL", False, last_line, last_column)
+            else:
+                self._add_token("KEYWORD", identifier.upper(), last_line, last_column)
         else:
             self._add_token("IDENTIFIER", identifier, last_line, last_column)
 
     def _make_string(self) -> None:
         string = ""
         string_char = self.current_char
-        self._next_token(False)
-        while self.current_char != string_char:
+        last_line: int = self.line
+        last_column: int = self.column
+        
+        self._next_token(False)  # Skip opening quote
+        
+        while self.current_char is not None and self.current_char != string_char:
             if self.current_char == "\\":
                 self._next_token(False)
                 if self.current_char == "n":
                     string += "\n"
                 elif self.current_char == "t":
                     string += "\t"
+                elif self.current_char == "r":
+                    string += "\r"
+                elif self.current_char == "\\":
+                    string += "\\"
+                elif self.current_char == string_char:
+                    string += string_char
                 else:
                     string += self.current_char
-            string += self.current_char
+            else:
+                string += self.current_char
             self._next_token(False)
-        self._next_token()
-        self._add_token("STRING", string)
+            
+        if self.current_char is None:
+            self._error("Unterminated string")
+            
+        self._next_token(False)  # Skip closing quote
+        
+        if len(string) == 1:
+            self._add_token("CHAR", string, last_line, last_column)
+        else:
+            self._add_token("STRING", string, last_line, last_column)
 
     def _make_number(self) -> None:
         number = ""
         is_float = False
-        while self.current_char and self.current_char in "0123456789._":
-            if self.current_char == ".":
-                is_float = True
+        last_line: int = self.line
+        last_column: int = self.column
+        
+        # Process integer part
+        while self.current_char is not None and self.current_char.isdigit():
+            number += self.current_char
+            self._next_token(False)
+        
+        # Check for decimal point (but not range operator)
+        if (self.current_char == '.' and 
+            (self.pos + 1 >= len(self.input) or 
+             self.input[self.pos + 1] != '.')):
+            
+            is_float = True
+            number += self.current_char
+            self._next_token(False)
+            
+            # Process decimal part
+            while self.current_char is not None and self.current_char.isdigit():
                 number += self.current_char
                 self._next_token(False)
-            elif self.current_char == "_":
-                self._next_token(False)
-            else:
-                number += self.current_char
-                self._next_token(False)
+        
+        # Create the appropriate token
         if is_float:
-            self._add_token("FLOAT", float(number))
+            self._add_token("FLOAT", float(number), last_line, last_column)
         else:
-            self._add_token("INT", int(number))
+            self._add_token("INT", int(number), last_line, last_column)
